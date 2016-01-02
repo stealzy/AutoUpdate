@@ -1,20 +1,21 @@
 ; checkTime, updateInterval, iniFile, dontUseChangeLog, AuUpDefEn, 
 checkTime := ((A_YYYY-2015)*365 + A_YDay)*24 + A_Hour ; if you change time format, also clear value in .ini
-updateInterval := 24
+updateInterval := 1
 iniFile := A_ScriptName ".ini"
-LAST_FILE_URL:="https://raw.githubusercontent.com/stealzy/2GISLaunch/master/2gisLaunch.ahk"
+LAST_FILE_URL:="https://raw.githubusercontent.com/stealzy/AutoUpdate/master/AutoUpdate.ahk"
 
 UpdateLib(LAST_FILE_URL,, checkTime, updateInterval, iniFile)
+Return
 ;------------------------------------------------------------------------------
-UpdateLib(LAST_FILE_URL, manually, checkTime, updateInterval, iniFile) {
+UpdateLib(LAST_FILE_URL, manually:="", checkTime:="", updateInterval:="", iniFile:="") {
 	IniRead lastCheckTime, %iniFile%, update, Last checked time, 0
 	if (checkTime - lastCheckTime > updateInterval) || manually
 		CompareVerAndAction(LAST_FILE_URL, checkTime, iniFile)
 }
 CompareVerAndAction(LAST_FILE_URL, checkTime, iniFile) {
-	CHANGELOG_URL:="https://raw.githubusercontent.com/stealzy/2GISLaunch/master/CHANGELOG.md"
+	CHANGELOG_URL:="https://raw.githubusercontent.com/stealzy/AutoUpdate/master/CHANGELOG.md"
 	VERSION_FORMAT:="Oi)(?<=\nVersion )\d+(\.\d+)?"
-	currVer := GetCurrentVer()
+	currVer := GetCurrentVer(iniFile)
 	lastVer := GetLastVer(CHANGELOG_URL, VERSION_FORMAT)
 	if (lastVer > currVer) {
 		IniRead OnlyCheckNewVersion, %iniFile%, update, OnlyCheckNewVersion Enable, false
@@ -59,15 +60,22 @@ Update(LAST_FILE_URL, iniFile, lastVer) {
 	}
 }
 
-GetCurrentVer(iniFile) {
-	; If A_IsCompiled {
-	; 	FileGetVersion, currVer, %A_ScriptFullPath%
-	; } else {
-	; 	FileRead, text, %A_ScriptFullPath%
-	; 	RegExMatch(text, "Oi)(?<=; Version := )\d+(\.\d+)?", currVer)
-	; 	currVer := currVer.Value(0)
-	; }
-	IniRead currVer, %iniFile%, update, Current Version, 0
+GetCurrentVer(method:="", param:="") {
+	if (method="ini") {
+		if (param="")
+			param := A_ScriptName ".ini"
+		IniRead currVer, %param%, update, Current Version, 0
+	} else if (method="inside") {
+		if (param="")
+			param := "Oi)(?<=; Version = )\d+(\.\d+)?"
+		If A_IsCompiled {
+			FileGetVersion, currVer, %A_ScriptFullPath%
+		} else {
+			FileRead, text, %A_ScriptFullPath%
+			RegExMatch(text, param, currVer)
+			currVer := currVer.Value(0)
+		}
+	}
 	Return currVer
 }
 GetLastVer(CHANGELOG_URL, VERSION_FORMAT) {
@@ -78,6 +86,7 @@ GetLastVer(CHANGELOG_URL, VERSION_FORMAT) {
 	Return lastVer
 }
 UrlDownloadToVar(URL) {
+	; if Error return false, put explanation in ErrorLevel
 	WebRequest := ComObjCreate("WinHttp.WinHttpRequest.5.1")
 	try WebRequest.Open("GET", URL, true)
 	catch	Error {
