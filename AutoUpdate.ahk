@@ -1,9 +1,5 @@
 ; SetWorkingDir %A_ScriptDir%
 ; WhereCurrVer - ":%regex%" - write in same file, "%inifilename%" - write in ini file in section - update, key - current version
-; [update]
-;  current version
-;  last check
-; Return
 AutoUpdate(FILE, mode:=0, updateIntervalDays:=7, CHANGELOG:="", WhereCurrVer:="", backupNumber:=1) {
 	OutputDebug AutoUpdate()
 	if NeedToCheckUpdate(mode, updateIntervalDays) {
