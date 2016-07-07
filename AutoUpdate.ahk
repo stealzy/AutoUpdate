@@ -28,7 +28,7 @@ NewVerAvailable(mode, CHANGELOG, WhereCurrVer, currVer, lastVer) {
 Update(FILE, mode, backupNumber, currVer, lastVer) {
 	askBefore := (mode & 16)
 	if (!askBefore) {
-		Err := DownloadAndReplace(FILE, backupNumber, WhereCurrVer)
+		Err := DownloadAndReplace(FILE, backupNumber, lastVer, WhereCurrVer)
 		OutputDebug % Err
 		if ((Err != "") && (Err != "No access to the Internet"))
 			MsgBox 48,, %Err%, 5
@@ -36,7 +36,7 @@ Update(FILE, mode, backupNumber, currVer, lastVer) {
 		MsgBox, 36, %A_ScriptName% %currVer%, New version %lastVer% available.`nDownload it now? ; [Y] [Later] [Don't check update] ; ToolTip - Later by def
 		IfMsgBox Yes
 		{
-			if (Err := DownloadAndReplace(FILE, backupNumber, WhereCurrVer))
+			if (Err := DownloadAndReplace(FILE, backupNumber, lastVer, WhereCurrVer))
 				MsgBox 48,, %Err%, 5
 			else {
 				MsgBox, 36, %A_ScriptName%, Script updated.`nRestart it now? ; ToolTip Script updated.`nClick to restart script right now.
@@ -49,30 +49,32 @@ Update(FILE, mode, backupNumber, currVer, lastVer) {
 	}
 }
 
-DownloadAndReplace(FILE, backupNumber, WhereCurrVer) {
+DownloadAndReplace(FILE, backupNumber, lastVer, WhereCurrVer) {
 	; Download File from Net and replace origin
-	; Return "" if update success Or return Error
-	; Write CurrentVersion
+	; Return "" if update success Or return Error, if not
+	; Write CurrentVersion to ini
 	currFile := FileOpen(A_ScriptFullPath, "r").Read()
 	if A_LastError
 		Return "FileOpen Error: " A_LastError
 	lastFile := UrlDownloadToVar(FILE)
 	if ErrorLevel
 		Return ErrorLevel
-
-	if (currFile = lastFile) {
-		WriteCurrentVersion(WhereCurrVer)
+	OutputDebug -Update-0
+	if (RegExReplace(currFile, "\R", "`n") = RegExReplace(lastFile, "\R", "`n")) {
+		WriteCurrentVersion(lastVer, WhereCurrVer)
 		Return "Last version the same file"
 	} else {
-		; FileMove %A_ScriptFullPath%, %A_ScriptFullPath%._v%currVer%.backup
+		; FileAppend, % currFile, currFile.txt
+		; FileAppend, % lastFile, lastFile.txt
+		FileMove %A_ScriptFullPath%, %A_ScriptFullPath%._v%currVer%.backup
 		if ErrorLevel
 			Return "Error access to " A_ScriptFullPath " : " ErrorLevel
-		; FileAppend lastFile, %A_ScriptFullPath%
+		FileAppend lastFile, %A_ScriptFullPath%
 		if ErrorLevel
 			Return "Error create new " A_ScriptFullPath " : " ErrorLevel
 	}
-	WriteCurrentVersion(WhereCurrVer)
-	OutputDebug Update
+	WriteCurrentVersion(lastVer, WhereCurrVer)
+	OutputDebug -Update-
 }
 
 GetTimeToUpdate(updateIntervalDays) {
@@ -92,12 +94,9 @@ WriteLastCheckTime(iniFile:="") {
 	IniWrite, %A_Now%, %iniFile%, update, last check
 	OutputDebug WriteLastCheckTime
 }
-WriteCurrentVersion(WhereCurrVer) {
-	if (WhereCurrVer="")
-		iniName := GetNameNoExt(A_ScriptName) ".ini"
-	else
-		iniName := WhereCurrVer
-	IniWrite lastVer, %iniName%, update, current version
+WriteCurrentVersion(lastVer, iniFile:="") {
+	iniFile := iniFile ? iniFile : GetNameNoExt(A_ScriptName) . ".ini"
+	IniWrite %lastVer%, %iniName%, update, current version
 }
 GetCurrentVer(WhereCurrVer) {
 	if (SubStr(WhereCurrVer, 1, 1) =":") {
