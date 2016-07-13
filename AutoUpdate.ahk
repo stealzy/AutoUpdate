@@ -77,7 +77,7 @@ DownloadAndReplace(FILE, backupNumber, WhereCurrVer, lastVer, currVer) {
 }
 
 GetTimeToUpdate(updateIntervalDays) {
-	timeToUpdate := ReadLastCheckTime()
+	timeToUpdate := GetLastCheckTime()
 	timeToUpdate += %updateIntervalDays%, days
 	OutputDebug GetTimeToUpdate %timeToUpdate%
 	Return timeToUpdate
