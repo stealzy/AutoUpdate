@@ -31,7 +31,7 @@ Update(FILE, mode, backupNumber, WhereCurrVer, currVer, lastVer) {
 		MsgBox, 36, %A_ScriptName% %currVer%, New version %lastVer% available.`nDownload it now? ; [Yes] [No]  [x][Don't check update]
 		IfMsgBox Yes
 		{
-			if (Err := DownloadAndReplace(FILE, backupNumber, lastVer, WhereCurrVer)) {
+			if (Err := DownloadAndReplace(FILE, backupNumber, WhereCurrVer, lastVer, currVer)) {
 				if ((Err != "") && (Err != "No access to the Internet"))
 					MsgBox 48,, %Err%, 5
 			} else {
