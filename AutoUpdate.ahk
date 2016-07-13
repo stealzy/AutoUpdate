@@ -1,55 +1,55 @@
-; SetWorkingDir %A_ScriptDir%
-; WhereCurrVer - ":%regex%" - write in same file, "%inifilename%" - write in ini file in section - update, key - current version
 AutoUpdate(FILE, mode:=0, updateIntervalDays:=7, CHANGELOG:="", WhereCurrVer:="", backupNumber:=1) {
 	OutputDebug AutoUpdate()
 	if NeedToCheckUpdate(mode, updateIntervalDays) {
 		currVer := GetCurrentVer(WhereCurrVer)
 		lastVer := GetLastVer(CHANGELOG)
 		if NewVerAvailable(mode, CHANGELOG, WhereCurrVer, currVer, lastVer)
-			Update(FILE, mode, backupNumber, currVer, lastVer)
+			Update(FILE, mode, backupNumber, WhereCurrVer, currVer, lastVer)
 	}
 }
 NeedToCheckUpdate(mode, updateIntervalDays) {
-	OutputDebug NeedToCheckUpdate()
 	if ((NoAuto := mode & 2) And Not (Manually := mode & 1)) {
-		OutputDebug NeedToCheckUpdate False
-		Return False
+		NeedToCheckUpdate := False
+	} else if (A_Now > GetTimeToUpdate(updateIntervalDays)) || (manually := mode & 1) {
+		NeedToCheckUpdate := True
 	}
-	if (A_Now > GetTimeToUpdate(updateIntervalDays)) || (manually := mode & 1) {
-		OutputDebug NeedToCheckUpdate True
-		Return True
-	}
+	OutputDebug NeedToCheckUpdate %NeedToCheckUpdate%
+	Return %NeedToCheckUpdate%
 }
 NewVerAvailable(mode, CHANGELOG, WhereCurrVer, currVer, lastVer) {
 	WriteLastCheckTime(WhereCurrVer)
 	if ((lastVer > currVer) || !CHANGELOG || !currVer)
 		Return True
 }
-Update(FILE, mode, backupNumber, currVer, lastVer) {
-	askBefore := (mode & 16)
-	if (!askBefore) {
-		Err := DownloadAndReplace(FILE, backupNumber, lastVer, WhereCurrVer)
-		OutputDebug % Err
-		if ((Err != "") && (Err != "No access to the Internet"))
-			MsgBox 48,, %Err%, 5
+Update(FILE, mode, backupNumber, WhereCurrVer, currVer, lastVer) {
+	silentUpdate := !(mode & 4)
+	if silentUpdate {
+		OutputDebug % DownloadAndReplace(FILE, backupNumber, WhereCurrVer, lastVer, currVer)
+		if (mode & 8)
+			Reload
 	} else {
-		MsgBox, 36, %A_ScriptName% %currVer%, New version %lastVer% available.`nDownload it now? ; [Y] [Later] [Don't check update] ; ToolTip - Later by def
+		MsgBox, 36, %A_ScriptName% %currVer%, New version %lastVer% available.`nDownload it now? ; [Yes] [No]  [x][Don't check update]
 		IfMsgBox Yes
 		{
-			if (Err := DownloadAndReplace(FILE, backupNumber, lastVer, WhereCurrVer))
-				MsgBox 48,, %Err%, 5
-			else {
-				MsgBox, 36, %A_ScriptName%, Script updated.`nRestart it now? ; ToolTip Script updated.`nClick to restart script right now.
-				IfMsgBox Yes
-				{
-					Reload ; no CL parameters!
+			if (Err := DownloadAndReplace(FILE, backupNumber, lastVer, WhereCurrVer)) {
+				if ((Err != "") && (Err != "No access to the Internet"))
+					MsgBox 48,, %Err%, 5
+			} else {
+				if (mode & 8)
+					Reload
+				else if (mode & 16) {
+					MsgBox, 36, %A_ScriptName%, Script updated.`nRestart it now?
+					IfMsgBox Yes
+					{
+						Reload ; no CL parameters!
+					}
 				}
 			}
 		}
 	}
 }
 
-DownloadAndReplace(FILE, backupNumber, lastVer, WhereCurrVer) {
+DownloadAndReplace(FILE, backupNumber, WhereCurrVer, lastVer, currVer) {
 	; Download File from Net and replace origin
 	; Return "" if update success Or return Error, if not
 	; Write CurrentVersion to ini
@@ -64,12 +64,11 @@ DownloadAndReplace(FILE, backupNumber, lastVer, WhereCurrVer) {
 		WriteCurrentVersion(lastVer, WhereCurrVer)
 		Return "Last version the same file"
 	} else {
-		; FileAppend, % currFile, currFile.txt
-		; FileAppend, % lastFile, lastFile.txt
-		FileMove %A_ScriptFullPath%, %A_ScriptFullPath%._v%currVer%.backup
+		backupName := A_ScriptFullPath ".v" currVer "_backup"
+		FileMove %A_ScriptFullPath%, %backupName%, 1
 		if ErrorLevel
 			Return "Error access to " A_ScriptFullPath " : " ErrorLevel
-		FileAppend lastFile, %A_ScriptFullPath%
+		FileAppend %lastFile%, %A_ScriptFullPath%
 		if ErrorLevel
 			Return "Error create new " A_ScriptFullPath " : " ErrorLevel
 	}
@@ -80,13 +79,13 @@ DownloadAndReplace(FILE, backupNumber, lastVer, WhereCurrVer) {
 GetTimeToUpdate(updateIntervalDays) {
 	timeToUpdate := ReadLastCheckTime()
 	timeToUpdate += %updateIntervalDays%, days
-	OutputDebug GetTimeToUpdate=%timeToUpdate%
+	OutputDebug GetTimeToUpdate %timeToUpdate%
 	Return timeToUpdate
 }
-ReadLastCheckTime(iniFile:="") {
+GetLastCheckTime(iniFile:="") {
 	iniFile := iniFile ? iniFile : GetNameNoExt(A_ScriptName) . ".ini"
 	IniRead lastCheckTime, %iniFile%, update, last check, 0
-	OutputDebug ReadLastCheckTime=%lastCheckTime%
+	OutputDebug LastCheckTime %lastCheckTime%
 	Return lastCheckTime
 }
 WriteLastCheckTime(iniFile:="") {
@@ -96,7 +95,8 @@ WriteLastCheckTime(iniFile:="") {
 }
 WriteCurrentVersion(lastVer, iniFile:="") {
 	iniFile := iniFile ? iniFile : GetNameNoExt(A_ScriptName) . ".ini"
-	IniWrite %lastVer%, %iniName%, update, current version
+	OutputDebug WriteCurrentVersion %lastVer% to %iniFile%
+	IniWrite %lastVer%, %iniFile%, update, current version
 }
 GetCurrentVer(WhereCurrVer) {
 	if (SubStr(WhereCurrVer, 1, 1) =":") {
@@ -132,11 +132,16 @@ GetLastVer(CHANGELOG) {
 
 	changelogContent := UrlDownloadToVar(URL)
 
-	if regexMode {
-		RegExMatch(changelogContent, Regex, changelogContentObj)
-		lastVer := changelogContentObj.0
-	} else
-		lastVer := changelogContent
+	if ErrorLevel {
+		if ((Err != "") && (NoAuto := mode & 2))
+			MsgBox 48,, %Err%, 5
+	} else {
+		if regexMode {
+			RegExMatch(changelogContent, Regex, changelogContentObj)
+			lastVer := changelogContentObj.0
+		} else
+			lastVer := changelogContent
+	}
 
 	OutputDebug, GetLastVer() = %lastVer%
 	Return lastVer
@@ -171,47 +176,40 @@ GetNameNoExt(FileName) {
 /*
 AutoUpdate(FILE, mode:=0, updateIntervalDays:="", CHANGELOG:="", WhereCurrVer:="", backupNumber:=1) {
 
-FILE: url last version of file
+FILE: url last version of .ahk file
 
-mode: 
-1 - manually / auto
-10 - if auto: on / off
-100 - if exist upd: ask before download upd && show changelog / download auto
-1000 - after download: ask before restart / restart auto / norestart
+mode:
+	manually																	1
+	if auto, don't check updated							2
+	if exist update, ask before download it 	4
+	auto restart after download 							8
+	if not autorestart, ask if restart need 	16
 
-updateIntervalDays:
+	Scenaries:
+	1) Silent check new version available, if exist such, AutoUpdate
+	2) Silent check new version available, if exist such, ask whether you want to update
+	3) Manual check new version available, if exist such, ask whether you want to update
+	• (ToolTip/MsgBox) asking whether you want to reload straight away
+
+updateIntervalDays: check for update every %updateIntervalDays% days
 
 CHANGELOG:
-1)"url"
-2)"url regex"
+	1)"url"
+	2)"url regex"
 
 WhereCurrVer:
-1)ini
-	""         IniRead currVer, %A_ScriptNameNoExt%.ini, update, current version, 0
-	"xxx"      IniRead currVer, xxx.ini, update, current version, 0
-2)inside
-	":"				 currVer := regex("Oi)^;\s*(?:version|ver)?\s*=?\s*(\d+(?:\.\d+)?)", A_Script)
-	":xxx"     currVer := regex(xxx, A_Script)
+	3 места хранения: .ahk, .ini, regestry
+		1)ini
+			""        IniRead currVer, %A_ScriptNameNoExt%.ini, update, current version, 0
+			"xxx"     IniRead currVer, xxx.ini, update, current version, 0
+		2)inside
+			"inside:"				currVer := regex("Oi)^;\s*(?:version|ver)?\s*=?\s*(\d+(?:\.\d+)?)", A_Script)
+			"inside:xxx"    currVer := regex(xxx, A_Script)
+		3)regestry
+			"regestry:"				RegRead, currVer, HKEY_CURRENT_USER, SOFTWARE\%A_ScriptNameNoExt%\CurrentVersion, Version
+			"regestry:xxx"		RegRead, currVer, HKEY_CURRENT_USER, SOFTWARE\%xxx%, Version
+
+	2 опциональных значения для хранения: currVers (если не указана, скрипт при проверке скачивается полностью и сравнивается с текущим), lastCheckDate (если не указана, проверка происходит при каждом вызове ф-ии AutoUpdate())
 
 backupNumber:
-}
 
-Если найти метод загружать только первые N байт файла, то можно писать версию в начале файла и отказаться от
-1) записи тек. версии в .ini файл
-2) желательности файла changelog.md на сервере для сокращения траффика проверки.
-
-TimeFormat in values: checkTime & updateInterval
-
-Можно хранить дату последней проверки во времени изменения файла и полностью отказаться от .ini
-Опции Проверка обновлений и Подтверждение обновления станут неизменяемыми. На крайний случай, перезапись тела скрипта.
-
-Modes:
-1) Silent check new version available, if exist such, AutoUpdate
-2) Silent check new version available, if exist such, show (ToolTip/MsgBox) asking whether you want to update
-3) Manual check new version available, if exist such, show (ToolTip/MsgBox) asking whether you want to update
-• (ToolTip/MsgBox) asking whether you want to reload straight away
-• check new version available, using CHANGELOG file. (You need uploade the CHANGELOG file with last version to a website)
-Or all file downloaded.
-
-write time of last check to (.ini | modify date of script)
-If %last check time% was within a %updateInterval%, Update not start.
