@@ -1,37 +1,50 @@
-AutoUpdate(FILE, mode:=0, updateIntervalDays:=7, CHANGELOG:="", WhereCurrVer:="", backupNumber:=1) {
-	OutputDebug AutoUpdate()
-	if NeedToCheckUpdate(mode, updateIntervalDays) {
-		currVer := GetCurrentVer(WhereCurrVer)
-		lastVer := GetLastVer(CHANGELOG)
-		if NewVerAvailable(mode, CHANGELOG, WhereCurrVer, currVer, lastVer)
-			Update(FILE, mode, backupNumber, WhereCurrVer, currVer, lastVer)
+AutoUpdate(FILE, mode:=0, updateIntervalDays:=7, CHANGELOG:="", iniFile:="", backupNumber:=1) {
+	iniFile := iniFile ? iniFile : GetNameNoExt(A_ScriptName) . ".ini"
+	VERSION_FromScript_REGEX := "Oim)^;\s*ver\w*\s*=?\s*(\d+(?:\.\d+)?)$"
+	
+	if NeedToCheckUpdate(mode, updateIntervalDays, iniFile) {
+		if CHANGELOG {
+			if Not (currVer := GetCurrentVer(iniFile))
+				currVer := GetCurrentVerFromScript(VERSION_FromScript_REGEX)
+			changelogContent := DownloadChangelog(CHANGELOG)
+			If changelogContent { 
+				if (lastVer := GetLastVer(CHANGELOG, changelogContent)) {
+					LastVerNews := GetLastVerNews(CHANGELOG, changelogContent)
+					WriteLastCheckTime(iniFile)
+					if Not (lastVer > currVer)
+						Return
+				}
+			} else {
+				if ((ErrorLevel != "") && (Manually := mode & 1)) {
+					MsgBox 48,, %ErrorLevel%, 5
+					Return
+				}
+			}
+		}
+		
+		Update(FILE, mode, backupNumber, iniFile, currVer, lastVer, LastVerNews)
 	}
 }
-NeedToCheckUpdate(mode, updateIntervalDays) {
-	if ((NoAuto := mode & 2) And Not (Manually := mode & 1)) {
+NeedToCheckUpdate(mode, updateIntervalDays, iniFile) {
+	if ((NotAuto := mode & 2) And Not (Manually := mode & 1)) {
 		NeedToCheckUpdate := False
-	} else if (A_Now > GetTimeToUpdate(updateIntervalDays)) || (manually := mode & 1) {
+	} else if (A_Now > GetTimeToUpdate(updateIntervalDays, iniFile)) || (manually := mode & 1) {
 		NeedToCheckUpdate := True
 	}
 	OutputDebug NeedToCheckUpdate %NeedToCheckUpdate%
 	Return %NeedToCheckUpdate%
 }
-NewVerAvailable(mode, CHANGELOG, WhereCurrVer, currVer, lastVer) {
-	WriteLastCheckTime(WhereCurrVer)
-	if ((lastVer > currVer) || !CHANGELOG || !currVer)
-		Return True
-}
-Update(FILE, mode, backupNumber, WhereCurrVer, currVer, lastVer) {
+Update(FILE, mode, backupNumber, iniFile, currVer, lastVer, LastVerNews:="") {
 	silentUpdate := !(mode & 4)
 	if silentUpdate {
-		OutputDebug % DownloadAndReplace(FILE, backupNumber, WhereCurrVer, lastVer, currVer)
+		OutputDebug % DownloadAndReplace(FILE, backupNumber, iniFile, lastVer, currVer)
 		if (mode & 8)
 			Reload
 	} else {
-		MsgBox, 36, %A_ScriptName% %currVer%, New version %lastVer% available.`nDownload it now? ; [Yes] [No]  [x][Don't check update]
+		MsgBox, 36, %A_ScriptName% %currVer%, New version %lastVer% available.`n%LastVerNews%`nDownload it now? ; [Yes] [No]  [x][Don't check update]
 		IfMsgBox Yes
 		{
-			if (Err := DownloadAndReplace(FILE, backupNumber, WhereCurrVer, lastVer, currVer)) {
+			if (Err := DownloadAndReplace(FILE, backupNumber, iniFile, lastVer, currVer)) {
 				if ((Err != "") && (Err != "No access to the Internet"))
 					MsgBox 48,, %Err%, 5
 			} else {
@@ -48,8 +61,7 @@ Update(FILE, mode, backupNumber, WhereCurrVer, currVer, lastVer) {
 		}
 	}
 }
-
-DownloadAndReplace(FILE, backupNumber, WhereCurrVer, lastVer, currVer) {
+DownloadAndReplace(FILE, backupNumber, iniFile, lastVer, currVer) {
 	; Download File from Net and replace origin
 	; Return "" if update success Or return Error, if not
 	; Write CurrentVersion to ini
@@ -59,92 +71,93 @@ DownloadAndReplace(FILE, backupNumber, WhereCurrVer, lastVer, currVer) {
 	lastFile := UrlDownloadToVar(FILE)
 	if ErrorLevel
 		Return ErrorLevel
-	OutputDebug -Update-0
+	OutputDebug DownloadAndReplace: File download
 	if (RegExReplace(currFile, "\R", "`n") = RegExReplace(lastFile, "\R", "`n")) {
-		WriteCurrentVersion(lastVer, WhereCurrVer)
+		WriteCurrentVersion(lastVer, iniFile)
 		Return "Last version the same file"
 	} else {
 		backupName := A_ScriptFullPath ".v" currVer "_backup"
-		FileMove %A_ScriptFullPath%, %backupName%, 1
+		FileCopy %A_ScriptFullPath%, %backupName%, 1
 		if ErrorLevel
 			Return "Error access to " A_ScriptFullPath " : " ErrorLevel
-		FileAppend %lastFile%, %A_ScriptFullPath%
+
+		file := FileOpen(A_ScriptFullPath, "w")
+		if !IsObject(file) {
+			MsgBox Can't open "%A_ScriptFullPath%" for writing.
+			return
+		}
+		file.Write(lastFile)
+		file.Close()
+
+		; FileAppend %lastFile%, %A_ScriptFullPath%
 		if ErrorLevel
 			Return "Error create new " A_ScriptFullPath " : " ErrorLevel
 	}
-	WriteCurrentVersion(lastVer, WhereCurrVer)
-	OutputDebug -Update-
+	WriteCurrentVersion(lastVer, iniFile)
+	OutputDebug DownloadAndReplace: File update
 }
-
-GetTimeToUpdate(updateIntervalDays) {
-	timeToUpdate := GetLastCheckTime()
+GetTimeToUpdate(updateIntervalDays, iniFile) {
+	timeToUpdate := GetLastCheckTime(iniFile)
 	timeToUpdate += %updateIntervalDays%, days
 	OutputDebug GetTimeToUpdate %timeToUpdate%
 	Return timeToUpdate
 }
-GetLastCheckTime(iniFile:="") {
-	iniFile := iniFile ? iniFile : GetNameNoExt(A_ScriptName) . ".ini"
+GetLastCheckTime(iniFile) {
 	IniRead lastCheckTime, %iniFile%, update, last check, 0
 	OutputDebug LastCheckTime %lastCheckTime%
 	Return lastCheckTime
 }
-WriteLastCheckTime(iniFile:="") {
-	iniFile := iniFile ? iniFile : GetNameNoExt(A_ScriptName) . ".ini"
+WriteLastCheckTime(iniFile) {
 	IniWrite, %A_Now%, %iniFile%, update, last check
 	OutputDebug WriteLastCheckTime
+	If ErrorLevel
+		Return 1
 }
-WriteCurrentVersion(lastVer, iniFile:="") {
-	iniFile := iniFile ? iniFile : GetNameNoExt(A_ScriptName) . ".ini"
+WriteCurrentVersion(lastVer, iniFile) {
 	OutputDebug WriteCurrentVersion %lastVer% to %iniFile%
 	IniWrite %lastVer%, %iniFile%, update, current version
+	If ErrorLevel
+		Return 1
 }
-GetCurrentVer(WhereCurrVer) {
-	if (SubStr(WhereCurrVer, 1, 1) =":") {
-		if (WhereCurrVer=":")
-			currVer:=""
-		else {
-			If A_IsCompiled {
-				FileGetVersion, currVer, %A_ScriptFullPath%
-			} else {
-				param := SubStr(WhereCurrVer, 2) ;"Oi)(?<=; Version = )\d+(\.\d+)?"
-				FileRead, text, %A_ScriptFullPath%
-				RegExMatch(text, param, currVer)
-				currVer := currVer.0
-			}
-		}
-	}	else {
-		if (WhereCurrVer="")
-			iniName := GetNameNoExt(A_ScriptName) ".ini"
-		else
-			iniName := WhereCurrVer
-		IniRead currVer, %iniName%, update, current version, 0
-	}
-
+GetCurrentVer(iniFile) {
+	IniRead currVer, %iniName%, update, current version, 0
 	OutputDebug, GetCurrentVer() = %currVer% from %iniName%
 	Return currVer
 }
-GetLastVer(CHANGELOG) {
-	If InStr(CHANGELOG, " ")
-		regexMode:=true
-	Array := StrSplit(CHANGELOG, " ")
-	URL := Array[1]
-	Regex := "Oi)" SubStr(CHANGELOG, StrLen(URL)+2)
-
-	changelogContent := UrlDownloadToVar(URL)
-
-	if ErrorLevel {
-		if ((Err != "") && (NoAuto := mode & 2))
-			MsgBox 48,, %Err%, 5
-	} else {
-		if regexMode {
-			RegExMatch(changelogContent, Regex, changelogContentObj)
-			lastVer := changelogContentObj.0
-		} else
-			lastVer := changelogContent
-	}
+GetCurrentVerFromScript(Regex) {
+	FileRead, ScriptText, % A_ScriptFullPath
+	RegExMatch(ScriptText, Regex, currVerObj)
+	currVer := currVerObj.1
+	Return currVer
+}
+GetLastVer(CHANGELOG, changelogContent) {
+	If IsObject(CHANGELOG) {
+		Regex := CHANGELOG[2]
+		RegExMatch(changelogContent, Regex, changelogContentObj)
+		lastVer := changelogContentObj.0
+	} else
+		lastVer := changelogContent
 
 	OutputDebug, GetLastVer() = %lastVer%
 	Return lastVer
+}
+GetLastVerNews(CHANGELOG, changelogContent) {
+	If IsObject(CHANGELOG) {
+		if (WhatNew_REGEX := CHANGELOG[3]) {
+			RegExMatch(changelogContent, WhatNew_REGEX, WhatNewO)
+			WhatNew := WhatNewO.1
+		}
+	}
+	Return WhatNew
+}
+DownloadChangelog(CHANGELOG) {
+	If IsObject(CHANGELOG)
+		URL := CHANGELOG[1]
+	else
+		URL := CHANGELOG
+
+	If changelogContent := UrlDownloadToVar(URL)
+		Return changelogContent
 }
 UrlDownloadToVar(URL) {
 	WebRequest := ComObjCreate("WinHttp.WinHttpRequest.5.1")
@@ -164,8 +177,8 @@ UrlDownloadToVar(URL) {
 		ErrorLevel := "HTTPStatusCode: " HTTPStatusCode
 		return false
 		}
-	ans:=WebRequest.ResponseText
 	OutputDebug UrlDownloadToVar() HTTPStatusCode = %HTTPStatusCode% 
+	ans:=WebRequest.ResponseText
 	return ans
 }
 GetNameNoExt(FileName) {
@@ -174,12 +187,22 @@ GetNameNoExt(FileName) {
 }
 
 /*
-AutoUpdate(FILE, mode:=0, updateIntervalDays:="", CHANGELOG:="", WhereCurrVer:="", backupNumber:=1) {
+AutoUpdate(FILE, mode:=0, updateIntervalDays:="", CHANGELOG:="", iniFile:="", backupNumber:=1) {
+CHANGELOG := [CHANGELOG_URL, VERSION_REGEX, WhatNew_REGEX]
+FILE := [FILE_URL, FILE_REGEX, VERSION_FromScript_REGEX]
+
+ini file strucnure:
+[update]
+	last check
+	current version
+	?auto check
+	?auto download
+	?auto restart
 
 FILE: url last version of .ahk file
 
 mode:
-	manually																	1
+	manually(ignore timeToUpdate)							1
 	if auto, don't check updated							2
 	if exist update, ask before download it 	4
 	auto restart after download 							8
@@ -197,19 +220,18 @@ CHANGELOG:
 	1)"url"
 	2)"url regex"
 
-WhereCurrVer:
-	3 места хранения: .ahk, .ini, regestry
-		1)ini
-			""        IniRead currVer, %A_ScriptNameNoExt%.ini, update, current version, 0
-			"xxx"     IniRead currVer, xxx.ini, update, current version, 0
-		2)inside
-			"inside:"				currVer := regex("Oi)^;\s*(?:version|ver)?\s*=?\s*(\d+(?:\.\d+)?)", A_Script)
-			"inside:xxx"    currVer := regex(xxx, A_Script)
-		3)regestry
-			"regestry:"				RegRead, currVer, HKEY_CURRENT_USER, SOFTWARE\%A_ScriptNameNoExt%\CurrentVersion, Version
-			"regestry:xxx"		RegRead, currVer, HKEY_CURRENT_USER, SOFTWARE\%xxx%, Version
+3 места хранения: .ahk, .ini, regestry
+	1)ini
+		"ini:"        IniRead currVer, %A_ScriptNameNoExt%.ini, update, current version, 0
+		"ini:xxx"     IniRead currVer, %xxx%, update, current version, 0
+	2)inside
+		"inside:"				currVer := regex("Oi)^;\s*(?:version|ver)?\s*=?\s*(\d+(?:\.\d+)?)", A_Script)
+		"inside:xxx"    currVer := regex(xxx, A_Script)
+	3)regestry
+		"regestry:"				RegRead, currVer, HKEY_CURRENT_USER, SOFTWARE\%A_ScriptNameNoExt%\CurrentVersion, Version
+		"regestry:xxx"		RegRead, currVer, HKEY_CURRENT_USER, SOFTWARE\%xxx%, Version
 
-	2 опциональных значения для хранения: currVers (если не указана, скрипт при проверке скачивается полностью и сравнивается с текущим), lastCheckDate (если не указана, проверка происходит при каждом вызове ф-ии AutoUpdate())
+2 опциональных значения для хранения: currVers (если не указана, скрипт при проверке скачивается полностью и сравнивается с текущим), lastCheckDate (если не указана, проверка происходит при каждом вызове ф-ии AutoUpdate())
 
 backupNumber:
 

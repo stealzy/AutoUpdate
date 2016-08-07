@@ -1,3 +1,4 @@
+#SingleInstance force
 #Include AutoUpdate.ahk
 
 FILE := "https://raw.githubusercontent.com/stealzy/AutoUpdate/master/ExampleSimpleUpdate.ahk"
