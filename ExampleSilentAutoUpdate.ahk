@@ -1,3 +1,4 @@
+; ver 1.1
 #SingleInstance force
 #Include AutoUpdate.ahk
 

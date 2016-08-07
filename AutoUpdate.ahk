@@ -1,13 +1,13 @@
 AutoUpdate(FILE, mode:=0, updateIntervalDays:=7, CHANGELOG:="", iniFile:="", backupNumber:=1) {
 	iniFile := iniFile ? iniFile : GetNameNoExt(A_ScriptName) . ".ini"
-	VERSION_FromScript_REGEX := "Oim)^;\s*ver\w*\s*=?\s*(\d+(?:\.\d+)?)$"
+	VERSION_FromScript_REGEX := "Oi)(?:^|\R);\s*ver\w*\s*=?\s*(\d+(?:\.\d+)?)(?:$|\R)"
 	currVer := GetCurrentVer(iniFile)
 	if NeedToCheckUpdate(mode, updateIntervalDays, iniFile) {
 		if (CHANGELOG!="") {
 			if Not (currVer := GetCurrentVer(iniFile))
 				currVer := GetCurrentVerFromScript(VERSION_FromScript_REGEX)
 			changelogContent := DownloadChangelog(CHANGELOG)
-			If changelogContent { 
+			If changelogContent {
 				if (lastVer := GetLastVer(CHANGELOG, changelogContent)) {
 					LastVerNews := GetLastVerNews(CHANGELOG, changelogContent)
 					WriteLastCheckTime(iniFile)
@@ -35,7 +35,7 @@ NeedToCheckUpdate(mode, updateIntervalDays, iniFile) {
 	Return NeedToCheckUpdate
 }
 Update(FILE, mode, backupNumber, iniFile, currVer, lastVer, LastVerNews:="") {
-	silentUpdate := !(mode & 4)
+	silentUpdate := ! ((mode & 4) || (mode & 1))
 	if silentUpdate {
 		OutputDebug % DownloadAndReplace(FILE, backupNumber, iniFile, lastVer, currVer)
 		if (mode & 8)
@@ -50,7 +50,7 @@ Update(FILE, mode, backupNumber, iniFile, currVer, lastVer, LastVerNews:="") {
 			} else {
 				if (mode & 8)
 					Reload
-				else if (mode & 16) {
+				else if ((mode & 16) || (mode & 1)) {
 					MsgBox, 36, %A_ScriptName%, Script updated.`nRestart it now?
 					IfMsgBox Yes
 					{
@@ -76,7 +76,7 @@ DownloadAndReplace(FILE, backupNumber, iniFile, lastVer, currVer) {
 		WriteCurrentVersion(lastVer, iniFile)
 		Return "Last version the same file"
 	} else {
-		backupName := A_ScriptFullPath ".v" currVer "_backup"
+		backupName := A_ScriptFullPath ".v" currVer ".backup"
 		FileCopy %A_ScriptFullPath%, %backupName%, 1
 		if ErrorLevel
 			Return "Error access to " A_ScriptFullPath " : " ErrorLevel
@@ -128,6 +128,7 @@ GetCurrentVerFromScript(Regex) {
 	FileRead, ScriptText, % A_ScriptFullPath
 	RegExMatch(ScriptText, Regex, currVerObj)
 	currVer := currVerObj.1
+	OutputDebug, GetCurrentVerFromScript() = %currVer% from %A_ScriptFullPath%
 	Return currVer
 }
 GetLastVer(CHANGELOG, changelogContent) {
@@ -199,11 +200,9 @@ ini file strucnure:
 	?auto download
 	?auto restart
 
-FILE: url last version of .ahk file
-
 mode:
-	manually(ignore timeToUpdate)							1
-	if auto, don't check updated							2
+	manually(ignore timeToUpdate)							1 ? set updateIntervalDays:=0
+	if auto, don't check updated							2 ? if (autocheck) {AU()}
 	if exist update, ask before download it 	4
 	auto restart after download 							8
 	if not autorestart, ask if restart need 	16
