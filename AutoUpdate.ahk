@@ -1,9 +1,9 @@
 AutoUpdate(FILE, mode:=0, updateIntervalDays:=7, CHANGELOG:="", iniFile:="", backupNumber:=1) {
 	iniFile := iniFile ? iniFile : GetNameNoExt(A_ScriptName) . ".ini"
 	VERSION_FromScript_REGEX := "Oim)^;\s*ver\w*\s*=?\s*(\d+(?:\.\d+)?)$"
-	
+	currVer := GetCurrentVer(iniFile)
 	if NeedToCheckUpdate(mode, updateIntervalDays, iniFile) {
-		if CHANGELOG {
+		if (CHANGELOG!="") {
 			if Not (currVer := GetCurrentVer(iniFile))
 				currVer := GetCurrentVerFromScript(VERSION_FromScript_REGEX)
 			changelogContent := DownloadChangelog(CHANGELOG)
@@ -31,8 +31,8 @@ NeedToCheckUpdate(mode, updateIntervalDays, iniFile) {
 	} else if (A_Now > GetTimeToUpdate(updateIntervalDays, iniFile)) || (manually := mode & 1) {
 		NeedToCheckUpdate := True
 	}
-	OutputDebug NeedToCheckUpdate %NeedToCheckUpdate%
-	Return %NeedToCheckUpdate%
+	OutputDebug % "NeedToCheckUpdate: " (NeedToCheckUpdate ? "Yes" : "No")
+	Return NeedToCheckUpdate
 }
 Update(FILE, mode, backupNumber, iniFile, currVer, lastVer, LastVerNews:="") {
 	silentUpdate := !(mode & 4)
@@ -120,8 +120,8 @@ WriteCurrentVersion(lastVer, iniFile) {
 		Return 1
 }
 GetCurrentVer(iniFile) {
-	IniRead currVer, %iniName%, update, current version, 0
-	OutputDebug, GetCurrentVer() = %currVer% from %iniName%
+	IniRead currVer, %iniFile%, update, current version, 0
+	OutputDebug, GetCurrentVer() = %currVer% from %iniFile%
 	Return currVer
 }
 GetCurrentVerFromScript(Regex) {
@@ -138,7 +138,7 @@ GetLastVer(CHANGELOG, changelogContent) {
 	} else
 		lastVer := changelogContent
 
-	OutputDebug, GetLastVer() = %lastVer%
+	OutputDebug, GetLastVer() = %lastVer%`, Regex = %Regex% 
 	Return lastVer
 }
 GetLastVerNews(CHANGELOG, changelogContent) {
