@@ -1,7 +1,6 @@
 AutoUpdate(FILE, mode:=0, updateIntervalDays:=7, CHANGELOG:="", iniFile:="", backupNumber:=1) {
 	iniFile := iniFile ? iniFile : GetNameNoExt(A_ScriptName) . ".ini"
 	VERSION_FromScript_REGEX := "Oi)(?:^|\R);\s*ver\w*\s*=?\s*(\d+(?:\.\d+)?)(?:$|\R)"
-	currVer := GetCurrentVer(iniFile)
 	if NeedToCheckUpdate(mode, updateIntervalDays, iniFile) {
 		if (CHANGELOG!="") {
 			if Not (currVer := GetCurrentVer(iniFile))
